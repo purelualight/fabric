@@ -1575,7 +1575,7 @@ var _ = Describe("Chain", func() {
 		It("can remove leader by retrying even if leadership transfer fails at first", func() {
 			network.elect(1)
 
-			var messageOmission uint32
+			var messageOmission atomic.Uint32
 
 			step1 := c1.getStepFunc()
 			c1.setStepFunc(func(dest uint64, msg *orderer.ConsensusRequest) error {
@@ -1585,7 +1585,7 @@ var _ = Describe("Chain", func() {
 				}
 				stepMsg := protoadapt.MessageV1Of(tmp).(*raftpb.Message)
 
-				if stepMsg.Type == raftpb.MsgTimeoutNow && atomic.CompareAndSwapUint32(&messageOmission, 0, 1) {
+				if stepMsg.Type == raftpb.MsgTimeoutNow && messageOmission.CompareAndSwap(0, 1) {
 					return nil
 				}
 

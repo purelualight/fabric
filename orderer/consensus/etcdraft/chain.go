@@ -159,7 +159,7 @@ type Chain struct {
 	raftID    uint64
 	channelID string
 
-	lastKnownLeader uint64
+	lastKnownLeader atomic.Uint64
 	ActiveNodes     atomic.Value
 
 	submitC  chan *submit
@@ -215,7 +215,7 @@ type Chain struct {
 	// BCCSP instance
 	CryptoProvider bccsp.BCCSP
 
-	leadershipTransferInProgress uint32
+	leadershipTransferInProgress atomic.Uint32
 }
 
 // NewChain constructs a chain object.
@@ -524,7 +524,7 @@ func (c *Chain) Consensus(req *orderer.ConsensusRequest, sender uint64) error {
 		return fmt.Errorf("failed to process Raft Step message: %s", err)
 	}
 
-	if len(req.Metadata) == 0 || atomic.LoadUint64(&c.lastKnownLeader) != sender { // ignore metadata from non-leader
+	if len(req.Metadata) == 0 || c.lastKnownLeader.Load() != sender { // ignore metadata from non-leader
 		return nil
 	}
 
@@ -756,7 +756,7 @@ func (c *Chain) run() {
 					c.logger.Infof("Raft leader changed: %d -> %d", soft.Lead, newLeader)
 					c.Metrics.LeaderChanges.Add(1)
 
-					atomic.StoreUint64(&c.lastKnownLeader, newLeader)
+					c.lastKnownLeader.Store(newLeader)
 
 					if newLeader == c.raftID {
 						propC, cancelProp = becomeLeader()
@@ -777,7 +777,7 @@ func (c *Chain) run() {
 				}
 
 				if isCandidate(app.soft.RaftState) || newLeader == raft.None {
-					atomic.StoreUint64(&c.lastKnownLeader, raft.None)
+					c.lastKnownLeader.Store(raft.None)
 					select {
 					case <-c.errorC:
 					default:
@@ -942,13 +942,13 @@ func (c *Chain) ordered(msg *orderer.SubmitRequest) (batches [][]*common.Envelop
 
 		if c.checkForEvictionNCertRotation(msg.Payload) {
 
-			if !atomic.CompareAndSwapUint32(&c.leadershipTransferInProgress, 0, 1) {
+			if !c.leadershipTransferInProgress.CompareAndSwap(0, 1) {
 				c.logger.Warnf("A reconfiguration transaction is already in progress, ignoring a subsequent transaction")
 				return
 			}
 
 			go func() {
-				defer atomic.StoreUint32(&c.leadershipTransferInProgress, 0)
+				defer c.leadershipTransferInProgress.Store(0)
 
 				abdicated := false
 				for attempt := 1; attempt <= AbdicationMaxAttempts; attempt++ {
@@ -1564,7 +1564,7 @@ func (c *Chain) suspectEviction() bool {
 		return false
 	}
 
-	return atomic.LoadUint64(&c.lastKnownLeader) == uint64(0)
+	return c.lastKnownLeader.Load() == uint64(0)
 }
 
 func (c *Chain) newEvictionSuspector() *evictionSuspector {

@@ -353,27 +353,27 @@ func commonNameFromContext(ctx context.Context) string {
 }
 
 type streamsMapperReporter struct {
-	size uint32
+	size atomic.Uint32
 	sync.Map
 }
 
 func (smr *streamsMapperReporter) Delete(key any) {
 	smr.Map.Delete(key)
-	atomic.AddUint32(&smr.size, ^uint32(0))
+	smr.size.Add(^uint32(0))
 }
 
 func (smr *streamsMapperReporter) Store(key, value any) {
 	smr.Map.Store(key, value)
-	atomic.AddUint32(&smr.size, 1)
+	smr.size.Add(1)
 }
 
 type workerCountReporter struct {
 	channel     string
-	workerCount uint32
+	workerCount atomic.Uint32
 }
 
 func (wcr *workerCountReporter) increment(m *Metrics) {
-	count := atomic.AddUint32(&wcr.workerCount, 1)
+	count := wcr.workerCount.Add(1)
 	m.reportWorkerCount(wcr.channel, count)
 }
 
@@ -383,7 +383,7 @@ func (wcr *workerCountReporter) decrement(m *Metrics) {
 	// It follows from commutativity of the unsigned integers group
 	// that wcr.workerCount + 2^32 - 1 = wcr.workerCount - 1 + 2^32
 	// which is just wcr.workerCount - 1.
-	count := atomic.AddUint32(&wcr.workerCount, ^uint32(0))
+	count := wcr.workerCount.Add(^uint32(0))
 	m.reportWorkerCount(wcr.channel, count)
 }
 
